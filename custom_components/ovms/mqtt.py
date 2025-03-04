@@ -7,6 +7,7 @@ import json
 import uuid
 import hashlib
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from collections import deque
 
 import paho.mqtt.client as mqtt
 
@@ -47,6 +48,7 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 # Signal constants
 SIGNAL_ADD_ENTITIES = f"{DOMAIN}_add_entities"
 SIGNAL_UPDATE_ENTITY = f"{DOMAIN}_update_entity"
+SIGNAL_PLATFORMS_LOADED = f"{DOMAIN}_platforms_loaded"
 
 
 def ensure_serializable(obj):
@@ -101,6 +103,14 @@ class OVMSMQTTClient:
         self.reconnect_count = 0
         self.last_reconnect_time = 0
         
+        # Entity queue for those discovered before platforms are ready
+        self.entity_queue = deque()
+        self.platforms_loaded = False
+        
+        # Status tracking
+        self._status_topic = None
+        self._connected_payload = "online"
+        
     async def async_setup(self) -> bool:
         """Set up the MQTT client."""
         _LOGGER.debug("Setting up MQTT client")
@@ -124,8 +134,12 @@ class OVMSMQTTClient:
         # Subscribe to topics
         self._subscribe_topics()
         
-        # Start the discovery process
-        asyncio.create_task(self._async_discover_entities())
+        # Set up listener for when all platforms are loaded
+        async_dispatcher_connect(
+            self.hass, 
+            SIGNAL_PLATFORMS_LOADED, 
+            self._async_platforms_loaded
+        )
         
         # Start the cleanup task for pending commands
         self._cleanup_task = asyncio.create_task(self._async_cleanup_pending_commands())
@@ -166,6 +180,25 @@ class OVMSMQTTClient:
                 context.verify_mode = ssl.CERT_NONE
             
             client.tls_set_context(context)
+        
+        # Add Last Will and Testament message
+        self._status_topic = f"{self.structure_prefix}/status"
+        will_payload = "offline"
+        will_qos = self.config.get(CONF_QOS, 1)
+        will_retain = True
+        
+        client.will_set(self._status_topic, will_payload, will_qos, will_retain)
+        
+        # Add MQTT v5 properties when available
+        if hasattr(mqtt, 'MQTTv5') and hasattr(mqtt, 'Properties') and hasattr(mqtt, 'PacketTypes'):
+            try:
+                properties = mqtt.Properties(mqtt.PacketTypes.CONNECT)
+                properties.UserProperty = ("client_type", "home_assistant_ovms")
+                properties.UserProperty = ("version", "1.0.0")
+                client.connect_properties = properties
+            except (TypeError, AttributeError) as e:
+                _LOGGER.debug("Failed to set MQTT v5 properties: %s", e)
+                # Continue without properties
             
         return client
         
@@ -240,11 +273,24 @@ class OVMSMQTTClient:
     
     def _on_connect_callback(self, client, userdata, flags, rc):
         """Common connection callback for different MQTT versions."""
-        _LOGGER.info("Connected to MQTT broker with result code: %s", rc)
+        if hasattr(mqtt, 'ReasonCodes'):
+            try:
+                reason_code = mqtt.ReasonCodes(mqtt.CMD_CONNACK, rc)
+                _LOGGER.info("Connected to MQTT broker with result: %s", reason_code)
+            except (TypeError, AttributeError):
+                _LOGGER.info("Connected to MQTT broker with result code: %s", rc)
+        else:
+            _LOGGER.info("Connected to MQTT broker with result code: %s", rc)
+            
         if rc == 0:
             self.connected = True
             # Re-subscribe if we get disconnected
             self._subscribe_topics()
+            
+            # Publish online status when connected
+            if self._status_topic:
+                client.publish(self._status_topic, self._connected_payload, 
+                              qos=self.config.get(CONF_QOS, 1), retain=True)
         else:
             self.connected = False
             _LOGGER.error("Failed to connect to MQTT broker: %s", rc)
@@ -292,8 +338,22 @@ class OVMSMQTTClient:
         
         if not self.connected:  # Avoid reconnecting if we're already connected
             try:
-                # Connect using the executor to avoid blocking
-                await self._async_connect()
+                # Use clean_session=False for persistent sessions
+                if hasattr(mqtt, 'MQTTv5'):
+                    try:
+                        client_options = {'clean_start': False}
+                        await self.hass.async_add_executor_job(
+                            self.client.reconnect, **client_options
+                        )
+                    except TypeError:
+                        # Fallback for older clients without clean_start parameter
+                        await self.hass.async_add_executor_job(
+                            self.client.reconnect
+                        )
+                else:
+                    await self.hass.async_add_executor_job(
+                        self.client.reconnect
+                    )
             except Exception as ex:  # pylint: disable=broad-except
                 _LOGGER.exception("Failed to reconnect to MQTT broker: %s", ex)
                 # Schedule another reconnect attempt
@@ -489,20 +549,46 @@ class OVMSMQTTClient:
         # Register this entity
         self.entity_registry[topic] = unique_id
         
-        # Send signal to create the entity
-        async_dispatcher_send(
-            self.hass,
-            SIGNAL_ADD_ENTITIES,
-            {
-                "topic": topic,
-                "payload": payload,
-                "entity_type": entity_type,
-                "unique_id": unique_id,
-                "name": entity_info["name"],
-                "device_info": self._get_device_info(),
-                "attributes": entity_info.get("attributes", {}),
-            },
-        )
+        # Create entity data
+        entity_data = {
+            "topic": topic,
+            "payload": payload,
+            "entity_type": entity_type,
+            "unique_id": unique_id,
+            "name": entity_info["name"],
+            "device_info": self._get_device_info(),
+            "attributes": entity_info.get("attributes", {}),
+        }
+        
+        # If platforms are loaded, send the entity to be created
+        # Otherwise, queue it for later
+        if self.platforms_loaded:
+            async_dispatcher_send(
+                self.hass,
+                SIGNAL_ADD_ENTITIES,
+                entity_data,
+            )
+        else:
+            _LOGGER.debug("Platforms not yet loaded, queuing entity: %s", entity_info["name"])
+            self.entity_queue.append(entity_data)
+        
+    async def _async_platforms_loaded(self) -> None:
+        """Handle platforms loaded signal."""
+        _LOGGER.info("All platforms loaded, processing %d queued entities", len(self.entity_queue))
+        self.platforms_loaded = True
+        
+        # Process any queued entities
+        while self.entity_queue:
+            entity_data = self.entity_queue.popleft()
+            _LOGGER.debug("Processing queued entity: %s", entity_data["name"])
+            async_dispatcher_send(
+                self.hass,
+                SIGNAL_ADD_ENTITIES,
+                entity_data,
+            )
+            
+        # Start entity discovery
+        await self._async_discover_entities()
         
     def _parse_topic(self, topic) -> Tuple[Optional[str], Optional[Dict]]:
         """Parse a topic to determine the entity type and info."""

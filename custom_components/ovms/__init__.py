@@ -5,9 +5,10 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DOMAIN, LOGGER_NAME, CONFIG_VERSION
-from .mqtt import OVMSMQTTClient
+from .mqtt import OVMSMQTTClient, SIGNAL_PLATFORMS_LOADED
 from .services import async_setup_services, async_unload_services
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
@@ -45,6 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     
     # Set up platforms
+    _LOGGER.debug("Setting up platforms: %s", PLATFORMS)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     
     # Set up services
@@ -52,6 +54,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Update listener for config entry changes
     entry.async_on_unload(entry.add_update_listener(async_update_options))
+    
+    # Signal that all platforms are loaded
+    _LOGGER.info("All platforms loaded, notifying MQTT client")
+    async_dispatcher_send(hass, SIGNAL_PLATFORMS_LOADED)
     
     return True
 

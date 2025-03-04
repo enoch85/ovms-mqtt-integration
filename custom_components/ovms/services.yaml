@@ -1,0 +1,145 @@
+send_command:
+  name: Send command
+  description: Send a command to the OVMS module.
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: ID of the vehicle to send command to
+      required: true
+      example: "my_car"
+      selector:
+        text:
+    command:
+      name: Command
+      description: Command to send
+      required: true
+      example: "stat"
+      selector:
+        text:
+    parameters:
+      name: Parameters
+      description: Command parameters
+      required: false
+      example: "range"
+      selector:
+        text:
+    command_id:
+      name: Command ID
+      description: Unique ID for this command (auto-generated if not provided)
+      required: false
+      selector:
+        text:
+    timeout:
+      name: Timeout
+      description: Timeout in seconds to wait for response
+      required: false
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+
+set_feature:
+  name: Set feature
+  description: Set an OVMS module feature.
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: ID of the vehicle
+      required: true
+      selector:
+        text:
+    feature:
+      name: Feature
+      description: Feature name to set
+      required: true
+      selector:
+        text:
+    value:
+      name: Value
+      description: Value to set
+      required: true
+      selector:
+        text:
+
+control_climate:
+  name: Control climate
+  description: Control the vehicle's climate system.
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: ID of the vehicle
+      required: true
+      selector:
+        text:
+    temperature:
+      name: Temperature
+      description: Target temperature
+      required: false
+      selector:
+        number:
+          min: 15
+          max: 30
+          step: 0.5
+          unit_of_measurement: "°C"
+    hvac_mode:
+      name: HVAC Mode
+      description: Mode to set
+      required: false
+      selector:
+        select:
+          options:
+            - "off"
+            - "heat"
+            - "cool"
+            - "auto"
+    duration:
+      name: Duration
+      description: Duration in minutes
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: "min"
+
+control_charging:
+  name: Control charging
+  description: Control the vehicle's charging system.
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: ID of the vehicle
+      required: true
+      selector:
+        text:
+    action:
+      name: Action
+      description: Charging action
+      required: true
+      selector:
+        select:
+          options:
+            - "start"
+            - "stop"
+            - "status"
+    mode:
+      name: Mode
+      description: Charging mode
+      required: false
+      selector:
+        select:
+          options:
+            - "standard"
+            - "storage"
+            - "range"
+            - "performance"
+    limit:
+      name: Limit
+      description: Charge limit (percentage)
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
