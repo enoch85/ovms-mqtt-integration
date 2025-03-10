@@ -10,12 +10,12 @@ from .const import DOMAIN
 
 # Fields to redact from diagnostic data
 REDACT_FIELDS = {
-    CONF_PASSWORD, 
-    CONF_USERNAME, 
-    "credentials", 
-    "auth", 
-    "password", 
-    "token", 
+    CONF_PASSWORD,
+    CONF_USERNAME,
+    "credentials",
+    "auth",
+    "password",
+    "token",
     "secret"
 }
 
@@ -24,7 +24,7 @@ async def async_get_config_entry_diagnostics(
 ) -> Dict[str, Any]:
     """Return diagnostics for a config entry."""
     mqtt_client = hass.data[DOMAIN][entry.entry_id]["mqtt_client"]
-    
+
     # Get basic diagnostic info
     diagnostics_data = {
         "config_entry": {
@@ -54,18 +54,18 @@ async def async_get_config_entry_diagnostics(
             "by_type": mqtt_client.entity_types,
         },
     }
-    
+
     # Include sample topics (without values)
     sample_topics = list(mqtt_client.topic_cache.keys())[:10]  # First 10 topics
-    
+
     diagnostics_data["sample_topics"] = {
         topic: {
-            "last_payload_length": len(mqtt_client.topic_cache[topic]["payload"]) 
+            "last_payload_length": len(mqtt_client.topic_cache[topic]["payload"])
                 if "payload" in mqtt_client.topic_cache[topic] else 0,
             "last_update": mqtt_client.topic_cache[topic].get("timestamp", 0),
         } for topic in sample_topics
     }
-    
+
     # Include parsed topic information
     topic_parsing_examples = {}
     for topic in sample_topics[:3]:  # Take first 3 for parsing examples
@@ -76,7 +76,7 @@ async def async_get_config_entry_diagnostics(
                 "name": entity_info.get("name", "unknown"),
                 "category": entity_info.get("attributes", {}).get("category", "unknown"),
             }
-    
+
     diagnostics_data["topic_parsing_examples"] = topic_parsing_examples
-    
+
     return diagnostics_data

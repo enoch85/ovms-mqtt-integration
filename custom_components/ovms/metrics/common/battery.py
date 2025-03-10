@@ -58,7 +58,7 @@ BATTERY_METRICS = {
         "unit": UnitOfElectricPotential.VOLT,
         "category": "battery",
     },
-    
+
     # Main battery cell metrics
     "v.b.c.temp": {
         "name": "Cell Temperatures",
@@ -154,7 +154,7 @@ BATTERY_METRICS = {
         "category": "battery",
         "has_cell_data": True,
     },
-    
+
     # Main battery metrics
     "v.b.cac": {
         "name": "Battery Capacity",
@@ -270,7 +270,7 @@ BATTERY_METRICS = {
         "icon": "mdi:battery-heart",
         "category": "battery",
     },
-    
+
     # Battery pack level metrics
     "v.b.p.level.avg": {
         "name": "Cell Level Average",

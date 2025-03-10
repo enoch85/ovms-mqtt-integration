@@ -57,7 +57,7 @@ POWER_METRICS = {
         "unit": UnitOfElectricPotential.VOLT,
         "category": "power",
     },
-    
+
     # Generator metrics (power output)
     "v.g.generating": {
         "name": "Generating",

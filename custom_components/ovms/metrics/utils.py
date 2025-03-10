@@ -46,7 +46,7 @@ def determine_category_from_topic(topic_parts):
         CATEGORY_VW_EUP,
         PREFIX_CATEGORIES,
     )
-    
+
     # Check for known categories in topic
     for part in topic_parts:
         part_lower = part.lower()
